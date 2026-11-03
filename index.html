@@ -1,0 +1,263 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legitta - Aplikasi Pesanan Reseller</title>
+    <!-- Tailwind CSS untuk styling modern -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        const SUPABASE_URL = "https://jdcmdgtzqpnuglbbrflp.supabase.co";
+        const SUPABASE_ANON_KEY = "sb_publishable_Dnq1gtpQSpGbr2h1vx6siw_RXfqPrXs";
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    </script>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans antialiased">
+    <div id="app" class="min-h-screen flex flex-col justify-between">
+        <!-- Header / Navbar -->
+        <header class="bg-indigo-600 text-white shadow-md">
+            <div class="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
+                <h1 class="text-xl font-bold tracking-wide">📦 Legitta App</h1>
+                <div id="user-nav" class="text-sm flex items-center gap-3">
+                    <!-- Dinamis terisi saat login -->
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="max-w-4xl w-full mx-auto p-4 flex-grow my-4">
+            <div id="loading" class="text-center py-12 text-gray-500">Memuat aplikasi...</div>
+            <div id="view-container" class="hidden"></div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-white border-t border-gray-200 py-3 text-center text-xs text-gray-500">
+            &copy; 2026 Legitta &bull; Didukung oleh Supabase
+        </footer>
+    </div>
+
+    <!-- Template Logic -->
+    <script>
+        let currentUser = null;
+        let currentProfile = null;
+
+        async function initApp() {
+            const { data: { session } } = await supabase.auth.getSession();
+            currentUser = session?.user || null;
+            
+            if (currentUser) {
+                const { data } = await supabase.from('profiles').select('*').eq('id', currentUser.id).single();
+                currentProfile = data;
+            }
+            render();
+        }
+
+        supabase.auth.onAuthStateChange(async (event, session) => {
+            currentUser = session?.user || null;
+            if (currentUser) {
+                const { data } = await supabase.from('profiles').select('*').eq('id', currentUser.id).single();
+                currentProfile = data;
+            } else {
+                currentProfile = null;
+            }
+            render();
+        });
+
+        function render() {
+            document.getElementById('loading').classList.add('hidden');
+            const container = document.getElementById('view-container');
+            const nav = document.getElementById('user-nav');
+            container.classList.remove('hidden');
+
+            if (!currentUser || !currentProfile) {
+                nav.innerHTML = '';
+                container.innerHTML = getAuthView();
+            } else {
+                nav.innerHTML = `
+                    <span>Halo, <b>${currentProfile.name || currentProfile.username}</b> (${currentProfile.role})</span>
+                    <button onclick="logout()" class="bg-indigo-700 hover:bg-indigo-800 px-3 py-1 rounded text-xs transition">Keluar</button>
+                `;
+                if (currentProfile.role === 'admin') {
+                    renderAdminView(container);
+                } else {
+                    renderResellerView(container);
+                }
+            }
+        }
+
+        function getAuthView() {
+            return `
+                <div class="max-w-md mx-auto bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                    <h2 class="text-xl font-bold mb-4 text-center text-indigo-600">Masuk ke Legitta</h2>
+                    <form onsubmit="handleLogin(event)" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-gray-600 mb-1">Email</label>
+                            <input type="email" id="login-email" required class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="email@domain.com">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-gray-600 mb-1">Password</label>
+                            <input type="password" id="login-password" required class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="••••••••">
+                        </div>
+                        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg text-sm transition">Masuk</button>
+                    </form>
+                </div>
+            `;
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) {
+                alert('Gagal Masuk: ' + error.message);
+            } else {
+                initApp();
+            }
+        }
+
+        async function logout() {
+            await supabase.auth.signOut();
+            initApp();
+        }
+
+        async function renderResellerView(container) {
+            // Ambil data produk & settings
+            const [{ data: products }, { data: settings }] = await Promise.all([
+                supabase.from('products').select('*').eq('active', true),
+                supabase.from('settings').select('*').single()
+            ]);
+
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+                        <div>
+                            <h2 class="font-bold text-gray-800">Status Periode: ${settings?.period || 'Aktif'}</h2>
+                            <p class="text-xs text-gray-500">Pemesanan saat ini: <span class="${settings?.open ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}">${settings?.open ? 'BUKA' : 'DITUTUP'}</span></p>
+                        </div>
+                        <div class="text-right text-xs text-gray-500">Ketentuan DP: ${settings?.dp || 30}%</div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                        <h3 class="font-bold text-lg mb-4 text-indigo-600">Form Pesanan Baru</h3>
+                        ${!settings?.open ? '<div class="bg-red-50 text-red-700 p-3 rounded-lg text-sm mb-4">Maaf, periode pemesanan sedang ditutup oleh admin.</div>' : ''}
+                        <form onsubmit="submitOrder(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-semibold uppercase text-gray-600 mb-1">Tanggal Pengambilan</label>
+                                <input type="date" id="order-pick" required class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold uppercase text-gray-600 mb-2">Daftar Produk</label>
+                                <div class="space-y-2 max-h-60 overflow-y-auto border p-2 rounded-lg">
+                                    ${products.map(p => `
+                                        <div class="flex justify-between items-center text-sm p-2 hover:bg-gray-50 rounded">
+                                            <div>
+                                                <div class="font-medium">${p.name}</div>
+                                                <div class="text-xs text-gray-500">Rp ${Number(p.price).toLocaleString('id-ID')}</div>
+                                            </div>
+                                            <input type="number" min="0" value="0" data-id="${p.id}" class="prod-qty w-16 border rounded text-center py-1 text-sm">
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold uppercase text-gray-600 mb-1">Metode Pembayaran</label>
+                                <select id="order-method" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                                    <option value="DP">DP (${settings?.dp || 30}%)</option>
+                                    <option value="Lunas">Lunas</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold uppercase text-gray-600 mb-1">Catatan (Opsional)</label>
+                                <textarea id="order-note" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Catatan tambahan..."></textarea>
+                            </div>
+                            <button type="submit" ${!settings?.open ? 'disabled' : ''} class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white font-medium py-2 rounded-lg text-sm transition">Kirim Pesanan</button>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function submitOrder(e) {
+            e.preventDefault();
+            const pick = document.getElementById('order-pick').value;
+            const method = document.getElementById('order-method').value;
+            const note = document.getElementById('order-note').value;
+
+            const items = [];
+            document.querySelectorAll('.prod-qty').forEach(input => {
+                const qty = parseInt(input.value) || 0;
+                if (qty > 0) {
+                    items.push({ id: parseInt(input.dataset.id), qty: qty });
+                }
+            });
+
+            if (items.length === 0) {
+                alert('Pilih minimal 1 produk!');
+                return;
+            }
+
+            const { data, error } = await supabase.rpc('create_order', {
+                p_items: items,
+                p_pick: pick,
+                p_method: method,
+                p_note: note
+            });
+
+            if (error) {
+                alert('Gagal membuat pesanan: ' + error.message);
+            } else {
+                alert('Pesanan berhasil dibuat dengan nomor: ' + data);
+                location.reload();
+            }
+        }
+
+        async function renderAdminView(container) {
+            const { data: orders } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+                        <h2 class="font-bold text-lg text-indigo-600">Panel Admin Legitta</h2>
+                        <span class="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-semibold">Admin Mode</span>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                        <h3 class="font-bold text-md mb-4">Daftar Pesanan Masuk (${orders?.length || 0})</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-sm">
+                                <thead>
+                                    <tr class="border-b text-gray-500 uppercase text-xs">
+                                        <th class="py-2">No. Pesanan</th>
+                                        <th class="py-2">Reseller</th>
+                                        <th class="py-2">Total</th>
+                                        <th class="py-2">Metode</th>
+                                        <th class="py-2">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${orders && orders.length > 0 ? orders.map(o => `
+                                        <tr class="border-b hover:bg-gray-50">
+                                            <td class="py-2 font-medium">${o.no}</td>
+                                            <td class="py-2">${o.rname || '-'}</td>
+                                            <td class="py-2">Rp ${Number(o.total).toLocaleString('id-ID')}</td>
+                                            <td class="py-2">${o.method}</td>
+                                            <td class="py-2"><span class="bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded text-xs">${o.status}</span></td>
+                                        </tr>
+                                    `).join('') : `<tr><td colspan="5" class="text-center py-4 text-gray-400">Belum ada pesanan</td></tr>`}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        initApp();
+    </script>
+</body>
+</html>
